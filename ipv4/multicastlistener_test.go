@@ -5,11 +5,13 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv4"
 )
 
 var udpMultipleGroupListenerTests = []net.Addr{
@@ -20,10 +22,10 @@ var udpMultipleGroupListenerTests = []net.Addr{
 
 func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 
@@ -42,7 +44,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isMulticastAvailable(&ifi); !ok {
+			if _, ok := nettest.IsMulticastCapable("ip4", &ifi); !ok {
 				continue
 			}
 			if err := p.JoinGroup(&ifi, gaddr); err != nil {
@@ -60,10 +62,10 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 
@@ -90,7 +92,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isMulticastAvailable(&ifi); !ok {
+			if _, ok := nettest.IsMulticastCapable("ip4", &ifi); !ok {
 				continue
 			}
 			for _, p := range ps {
@@ -112,10 +114,10 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 
@@ -131,7 +133,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isMulticastAvailable(&ifi)
+		ip, ok := nettest.IsMulticastCapable("ip4", &ifi)
 		if !ok {
 			continue
 		}
@@ -155,10 +157,10 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
@@ -183,7 +185,7 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		if _, ok := isMulticastAvailable(&ifi); !ok {
+		if _, ok := nettest.IsMulticastCapable("ip4", &ifi); !ok {
 			continue
 		}
 		if err := r.JoinGroup(&ifi, &gaddr); err != nil {
@@ -200,10 +202,10 @@ func TestIPSingleRawConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
@@ -222,7 +224,7 @@ func TestIPPerInterfaceSingleRawConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isMulticastAvailable(&ifi)
+		ip, ok := nettest.IsMulticastCapable("ip4", &ifi)
 		if !ok {
 			continue
 		}

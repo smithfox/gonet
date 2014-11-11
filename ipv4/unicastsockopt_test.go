@@ -5,19 +5,22 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv4"
 )
 
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -51,10 +54,10 @@ var packetConnUnicastSocketOptionTests = []struct {
 
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -75,13 +78,13 @@ func TestPacketConnUnicastSocketOptions(t *testing.T) {
 
 func TestRawConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "nacl", "plan9", "solaris":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -108,7 +111,7 @@ type testIPv4UnicastConn interface {
 }
 
 func testUnicastSocketOptions(t *testing.T, c testIPv4UnicastConn) {
-	tos := DiffServCS0 | NotECNTransport
+	tos := iana.DiffServCS0 | iana.NotECNTransport
 	switch runtime.GOOS {
 	case "windows":
 		// IP_TOS option is supported on Windows 8 and beyond.

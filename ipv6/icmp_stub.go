@@ -2,23 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build nacl plan9 solaris
+// +build nacl plan9
 
 package ipv6
 
-type sysICMPFilter struct {
-	// TODO(mikio): Implement this
+type sysICMPv6Filter struct {
 }
 
-func (f *sysICMPFilter) set(typ ICMPType, block bool) {
-	// TODO(mikio): Implement this
+func (f *sysICMPv6Filter) set(typ ICMPType, block bool) {
 }
 
-func (f *sysICMPFilter) setAll(block bool) {
-	// TODO(mikio): Implement this
+func (f *sysICMPv6Filter) setAll(block bool) {
 }
 
-func (f *sysICMPFilter) willBlock(typ ICMPType) bool {
-	// TODO(mikio): Implement this
+func (f *sysICMPv6Filter) willBlock(typ ICMPType) bool {
 	return false
 }

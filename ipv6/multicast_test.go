@@ -6,12 +6,16 @@ package ipv6_test
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/icmp"
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv6"
 )
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
@@ -19,13 +23,13 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	case "freebsd": // due to a bug on loopback marking
 		// See http://www.freebsd.org/cgi/query-pr.cgi?pr=180065.
 		t.Skipf("not supported on %q", runtime.GOOS)
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -64,7 +68,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	}
 
 	cm := ipv6.ControlMessage{
-		TrafficClass: DiffServAF11 | CongestionExperienced,
+		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 		Src:          net.IPv6loopback,
 		IfIndex:      ifi.Index,
 	}
@@ -73,6 +77,9 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -97,7 +104,7 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -106,7 +113,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -122,7 +129,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 		t.Fatalf("net.ResolveIPAddr failed: %v", err)
 	}
 
-	pshicmp := ipv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP, ianaProtocolIPv6ICMP)
+	pshicmp := icmp.IPv6PseudoHeader(c.LocalAddr().(*net.IPAddr).IP, dst.IP)
 	p := ipv6.NewPacketConn(c)
 	defer p.Close()
 	if err := p.JoinGroup(ifi, dst); err != nil {
@@ -142,7 +149,7 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	}
 
 	cm := ipv6.ControlMessage{
-		TrafficClass: DiffServAF11 | CongestionExperienced,
+		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 		Src:          net.IPv6loopback,
 		IfIndex:      ifi.Index,
 	}
@@ -168,17 +175,20 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			// kernel checksum processing.
 			p.SetChecksum(false, -1)
 		}
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv6.ICMPTypeEchoRequest, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
 		}).Marshal(psh)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 		}
 		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -195,8 +205,8 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			t.Fatalf("ipv6.PacketConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			if m, err := parseICMPMessage(rb[:n]); err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+			if m, err := icmp.ParseMessage(iana.ProtocolIPv6ICMP, rb[:n]); err != nil {
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			} else if m.Type != ipv6.ICMPTypeEchoReply || m.Code != 0 {
 				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv6.ICMPTypeEchoReply, 0)
 			}

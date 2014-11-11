@@ -9,22 +9,29 @@ package ipv4
 import (
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/net/internal/iana"
 )
 
-func (cm *ControlMessage) marshalPacketInfo() (oob []byte) {
-	if l := cm.oobLen(); l > 0 {
-		oob = make([]byte, l)
-		m := (*syscall.Cmsghdr)(unsafe.Pointer(&oob[0]))
-		m.Level = ianaProtocolIP
-		m.Type = sysSockoptPacketInfo
-		m.SetLen(syscall.CmsgLen(sysSizeofPacketInfo))
-		pi := (*sysPacketInfo)(unsafe.Pointer(&oob[syscall.CmsgLen(0)]))
+func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
+	m := (*syscall.Cmsghdr)(unsafe.Pointer(&b[0]))
+	m.Level = iana.ProtocolIP
+	m.Type = sysIP_PKTINFO
+	m.SetLen(syscall.CmsgLen(sysSizeofInetPktinfo))
+	if cm != nil {
+		pi := (*sysInetPktinfo)(unsafe.Pointer(&b[syscall.CmsgLen(0)]))
 		if ip := cm.Src.To4(); ip != nil {
-			copy(pi.IP[:], ip)
+			copy(pi.Spec_dst[:], ip)
 		}
-		if cm.IfIndex != 0 {
-			pi.IfIndex = int32(cm.IfIndex)
+		if cm.IfIndex > 0 {
+			pi.setIfindex(cm.IfIndex)
 		}
 	}
-	return
+	return b[syscall.CmsgSpace(sysSizeofInetPktinfo):]
+}
+
+func parsePacketInfo(cm *ControlMessage, b []byte) {
+	pi := (*sysInetPktinfo)(unsafe.Pointer(&b[0]))
+	cm.IfIndex = int(pi.Ifindex)
+	cm.Dst = pi.Addr[:]
 }

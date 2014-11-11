@@ -5,12 +5,14 @@
 package ipv6_test
 
 import (
-	"code.google.com/p/go.net/ipv6"
 	"fmt"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv6"
 )
 
 var udpMultipleGroupListenerTests = []net.Addr{
@@ -21,7 +23,7 @@ var udpMultipleGroupListenerTests = []net.Addr{
 
 func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -43,7 +45,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isMulticastAvailable(&ifi); !ok {
+			if _, ok := nettest.IsMulticastCapable("ip6", &ifi); !ok {
 				continue
 			}
 			if err := p.JoinGroup(&ifi, gaddr); err != nil {
@@ -61,7 +63,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -91,7 +93,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 			t.Fatalf("net.Interfaces failed: %v", err)
 		}
 		for i, ifi := range ift {
-			if _, ok := isMulticastAvailable(&ifi); !ok {
+			if _, ok := nettest.IsMulticastCapable("ip6", &ifi); !ok {
 				continue
 			}
 			for _, p := range ps {
@@ -113,7 +115,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -132,7 +134,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isMulticastAvailable(&ifi)
+		ip, ok := nettest.IsMulticastCapable("ip6", &ifi)
 		if !ok {
 			continue
 		}
@@ -156,7 +158,7 @@ func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -181,7 +183,7 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		if _, ok := isMulticastAvailable(&ifi); !ok {
+		if _, ok := nettest.IsMulticastCapable("ip6", &ifi); !ok {
 			continue
 		}
 		if err := p.JoinGroup(&ifi, &gaddr); err != nil {
@@ -198,7 +200,7 @@ func TestIPSinglePacketConnWithSingleGroupListener(t *testing.T) {
 
 func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "darwin", "dragonfly", "plan9", "solaris", "windows":
+	case "darwin", "dragonfly", "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -220,7 +222,7 @@ func TestIPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 		t.Fatalf("net.Interfaces failed: %v", err)
 	}
 	for i, ifi := range ift {
-		ip, ok := isMulticastAvailable(&ifi)
+		ip, ok := nettest.IsMulticastCapable("ip6", &ifi)
 		if !ok {
 			continue
 		}

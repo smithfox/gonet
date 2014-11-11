@@ -5,91 +5,24 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/icmp"
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv4"
 )
-
-func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
-	c, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		return nil, nil, err
-	}
-	dst, err := net.ResolveUDPAddr("udp4", c.LocalAddr().String())
-	if err != nil {
-		c.Close()
-		return nil, nil, err
-	}
-	return c, dst, nil
-}
-
-func BenchmarkReadWriteNetUDP(b *testing.B) {
-	c, dst, err := benchmarkUDPListener()
-	if err != nil {
-		b.Fatalf("benchmarkUDPListener failed: %v", err)
-	}
-	defer c.Close()
-
-	wb, rb := []byte("HELLO-R-U-THERE"), make([]byte, 128)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		benchmarkReadWriteNetUDP(b, c, wb, rb, dst)
-	}
-}
-
-func benchmarkReadWriteNetUDP(b *testing.B, c net.PacketConn, wb, rb []byte, dst net.Addr) {
-	if _, err := c.WriteTo(wb, dst); err != nil {
-		b.Fatalf("net.PacketConn.WriteTo failed: %v", err)
-	}
-	if _, _, err := c.ReadFrom(rb); err != nil {
-		b.Fatalf("net.PacketConn.ReadFrom failed: %v", err)
-	}
-}
-
-func BenchmarkReadWriteIPv4UDP(b *testing.B) {
-	c, dst, err := benchmarkUDPListener()
-	if err != nil {
-		b.Fatalf("benchmarkUDPListener failed: %v", err)
-	}
-	defer c.Close()
-
-	p := ipv4.NewPacketConn(c)
-	defer p.Close()
-	cf := ipv4.FlagTTL | ipv4.FlagInterface
-	if err := p.SetControlMessage(cf, true); err != nil {
-		b.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
-	}
-	ifi := loopbackInterface()
-
-	wb, rb := []byte("HELLO-R-U-THERE"), make([]byte, 128)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		benchmarkReadWriteIPv4UDP(b, p, wb, rb, dst, ifi)
-	}
-}
-
-func benchmarkReadWriteIPv4UDP(b *testing.B, p *ipv4.PacketConn, wb, rb []byte, dst net.Addr, ifi *net.Interface) {
-	cm := ipv4.ControlMessage{TTL: 1}
-	if ifi != nil {
-		cm.IfIndex = ifi.Index
-	}
-	if _, err := p.WriteTo(wb, &cm, dst); err != nil {
-		b.Fatalf("ipv4.PacketConn.WriteTo failed: %v", err)
-	}
-	if _, _, _, err := p.ReadFrom(rb); err != nil {
-		b.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
-	}
-}
 
 func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -110,6 +43,9 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
 		p.SetTTL(i + 1)
@@ -133,13 +69,13 @@ func TestPacketConnReadWriteUnicastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -159,17 +95,20 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
 		p.SetTTL(i + 1)
@@ -188,9 +127,9 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b[:n])
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b[:n])
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			if runtime.GOOS == "linux" && m.Type == ipv4.ICMPTypeEcho {
 				// On Linux we must handle own sent packets.
@@ -205,13 +144,13 @@ func TestPacketConnReadWriteUnicastICMP(t *testing.T) {
 
 func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -234,15 +173,15 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		wh := &ipv4.Header{
 			Version:  ipv4.Version,
@@ -254,6 +193,9 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 			Dst:      dst.IP,
 		}
 		if err := r.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv4.RawConn.SetControlMessage failed: %v", err)
 		}
 		if err := r.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
@@ -271,9 +213,9 @@ func TestRawConnReadWriteUnicastICMP(t *testing.T) {
 			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b)
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b)
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			if runtime.GOOS == "linux" && m.Type == ipv4.ICMPTypeEcho {
 				// On Linux we must handle own sent packets.

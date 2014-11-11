@@ -6,11 +6,14 @@ package ipv6_test
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"runtime"
 	"sync"
 	"testing"
+
+	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv6"
 )
 
 func benchmarkUDPListener() (net.PacketConn, net.Addr, error) {
@@ -57,11 +60,11 @@ func BenchmarkReadWriteIPv6UDP(b *testing.B) {
 	defer c.Close()
 
 	p := ipv6.NewPacketConn(c)
-	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagInterface | ipv6.FlagPathMTU
+	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	if err := p.SetControlMessage(cf, true); err != nil {
 		b.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 
 	wb, rb := []byte("HELLO-R-U-THERE"), make([]byte, 128)
 	b.ResetTimer()
@@ -72,7 +75,7 @@ func BenchmarkReadWriteIPv6UDP(b *testing.B) {
 
 func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, wb, rb []byte, dst net.Addr, ifi *net.Interface) {
 	cm := ipv6.ControlMessage{
-		TrafficClass: DiffServAF11 | CongestionExperienced,
+		TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 		HopLimit:     1,
 	}
 	if ifi != nil {
@@ -90,7 +93,7 @@ func benchmarkReadWriteIPv6UDP(b *testing.B, p *ipv6.PacketConn, wb, rb []byte, 
 
 func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -110,9 +113,16 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 		t.Fatalf("net.ResolveUDPAddr failed: %v", err)
 	}
 
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback)
 	cf := ipv6.FlagTrafficClass | ipv6.FlagHopLimit | ipv6.FlagSrc | ipv6.FlagDst | ipv6.FlagInterface | ipv6.FlagPathMTU
 	wb := []byte("HELLO-R-U-THERE")
+
+	if err := p.SetControlMessage(cf, true); err != nil { // probe before test
+		if nettest.ProtocolNotSupported(err) {
+			t.Skipf("not supported on %q", runtime.GOOS)
+		}
+		t.Fatalf("ipv6.PacketConn.SetControlMessage failed: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	reader := func() {
@@ -131,9 +141,8 @@ func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	writer := func(toggle bool) {
 		defer wg.Done()
 		cm := ipv6.ControlMessage{
-			TrafficClass: DiffServAF11 | CongestionExperienced,
+			TrafficClass: iana.DiffServAF11 | iana.CongestionExperienced,
 			Src:          net.IPv6loopback,
-			Dst:          net.IPv6loopback,
 		}
 		if ifi != nil {
 			cm.IfIndex = ifi.Index

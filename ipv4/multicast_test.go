@@ -5,20 +5,24 @@
 package ipv4_test
 
 import (
-	"code.google.com/p/go.net/ipv4"
 	"net"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/net/internal/iana"
+	"golang.org/x/net/internal/icmp"
+	"golang.org/x/net/internal/nettest"
+	"golang.org/x/net/ipv4"
 )
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -59,6 +63,9 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 	for i, toggle := range []bool{true, false, true} {
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
 		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -79,13 +86,13 @@ func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -121,17 +128,20 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		if err := p.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv4.PacketConn.SetControlMessage failed: %v", err)
 		}
 		if err := p.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -146,9 +156,9 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 			t.Fatalf("ipv4.PacketConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b[:n])
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b[:n])
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			switch {
 			case m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
@@ -161,13 +171,13 @@ func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 }
 
 func TestRawConnReadWriteMulticastICMP(t *testing.T) {
-	if testing.Short() || !*testExternal {
+	if testing.Short() {
 		t.Skip("to avoid external network")
 	}
 	if os.Getuid() != 0 {
 		t.Skip("must be root")
 	}
-	ifi := loopbackInterface()
+	ifi := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	if ifi == nil {
 		t.Skipf("not available on %q", runtime.GOOS)
 	}
@@ -206,15 +216,15 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 	cf := ipv4.FlagTTL | ipv4.FlagDst | ipv4.FlagInterface
 
 	for i, toggle := range []bool{true, false, true} {
-		wb, err := (&icmpMessage{
+		wb, err := (&icmp.Message{
 			Type: ipv4.ICMPTypeEcho, Code: 0,
-			Body: &icmpEcho{
+			Body: &icmp.Echo{
 				ID: os.Getpid() & 0xffff, Seq: i + 1,
 				Data: []byte("HELLO-R-U-THERE"),
 			},
-		}).Marshal()
+		}).Marshal(nil)
 		if err != nil {
-			t.Fatalf("icmpMessage.Marshal failed: %v", err)
+			t.Fatalf("icmp.Message.Marshal failed: %v", err)
 		}
 		wh := &ipv4.Header{
 			Version:  ipv4.Version,
@@ -225,6 +235,9 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 			Dst:      dst.IP,
 		}
 		if err := r.SetControlMessage(cf, toggle); err != nil {
+			if nettest.ProtocolNotSupported(err) {
+				t.Skipf("not supported on %q", runtime.GOOS)
+			}
 			t.Fatalf("ipv4.RawConn.SetControlMessage failed: %v", err)
 		}
 		if err := r.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
@@ -239,12 +252,12 @@ func TestRawConnReadWriteMulticastICMP(t *testing.T) {
 			t.Fatalf("ipv4.RawConn.ReadFrom failed: %v", err)
 		} else {
 			t.Logf("rcvd cmsg: %v", cm)
-			m, err := parseICMPMessage(b)
+			m, err := icmp.ParseMessage(iana.ProtocolICMP, b)
 			if err != nil {
-				t.Fatalf("parseICMPMessage failed: %v", err)
+				t.Fatalf("icmp.ParseMessage failed: %v", err)
 			}
 			switch {
-			case isUnicast(rh.Dst) && m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
+			case (rh.Dst.IsLoopback() || rh.Dst.IsLinkLocalUnicast() || rh.Dst.IsGlobalUnicast()) && m.Type == ipv4.ICMPTypeEchoReply && m.Code == 0: // net.inet.icmp.bmcastecho=1
 			case rh.Dst.IsMulticast() && m.Type == ipv4.ICMPTypeEcho && m.Code == 0: // net.inet.icmp.bmcastecho=0
 			default:
 				t.Fatalf("got type=%v, code=%v; expected type=%v, code=%v", m.Type, m.Code, ipv4.ICMPTypeEchoReply, 0)

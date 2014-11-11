@@ -5,11 +5,12 @@
 package ipv6_test
 
 import (
-	"code.google.com/p/go.net/ipv6"
 	"net"
 	"os"
 	"runtime"
 	"testing"
+
+	"golang.org/x/net/ipv6"
 )
 
 var supportsIPv6 bool
@@ -24,7 +25,7 @@ func init() {
 var condFatalf = func() func(*testing.T, string, ...interface{}) {
 	// A few APIs are not implemented yet on some platforms.
 	switch runtime.GOOS {
-	case "darwin", "plan9", "solaris", "windows":
+	case "darwin", "nacl", "plan9", "solaris", "windows":
 		return (*testing.T).Logf
 	}
 	return (*testing.T).Fatalf
@@ -32,7 +33,7 @@ var condFatalf = func() func(*testing.T, string, ...interface{}) {
 
 func TestConnInitiatorPathMTU(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -65,7 +66,7 @@ func TestConnInitiatorPathMTU(t *testing.T) {
 
 func TestConnResponderPathMTU(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -98,7 +99,7 @@ func TestConnResponderPathMTU(t *testing.T) {
 
 func TestPacketConnChecksum(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris", "windows":
+	case "nacl", "plan9", "solaris", "windows":
 		t.Skipf("not supported on %q", runtime.GOOS)
 	}
 	if !supportsIPv6 {
